@@ -51,6 +51,7 @@ import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.object.DynamicObject;
+import com.oracle.truffle.js.builtins.JavaInteropWorkerPrototypeBuiltinsFactory.JavaInteropWorkerExecutionContextNodeGen;
 import com.oracle.truffle.js.builtins.JavaInteropWorkerPrototypeBuiltinsFactory.JavaInteropWorkerSubmitNodeGen;
 import com.oracle.truffle.js.builtins.JavaInteropWorkerPrototypeBuiltinsFactory.JavaInteropWorkerTerminateNodeGen;
 import com.oracle.truffle.js.nodes.function.JSBuiltin;
@@ -84,6 +85,7 @@ public final class JavaInteropWorkerPrototypeBuiltins extends JSBuiltinsContaine
     }
 
     public enum JavaInteropWorkerPrototype implements BuiltinEnum<JavaInteropWorkerPrototype> {
+        executionContext(0),
         submit(2),
         terminate(0);
 
@@ -102,6 +104,8 @@ public final class JavaInteropWorkerPrototypeBuiltins extends JSBuiltinsContaine
     @Override
     protected Object createNode(JSContext context, JSBuiltin builtin, boolean construct, boolean newTarget, JavaInteropWorkerPrototype builtinEnum) {
         switch (builtinEnum) {
+            case executionContext:
+                return JavaInteropWorkerExecutionContextNodeGen.create(context, builtin, args().withThis().fixedArgs(0).createArgumentNodes(context));
             case submit:
                 return JavaInteropWorkerSubmitNodeGen.create(context, builtin, args().withThis().fixedArgs(2).createArgumentNodes(context));
             case terminate:
@@ -109,6 +113,27 @@ public final class JavaInteropWorkerPrototypeBuiltins extends JSBuiltinsContaine
                                 args().withThis().varArgs().createArgumentNodes(context));
         }
         return null;
+    }
+
+    @ImportStatic(value = {JSJavaWorkerBuiltin.class})
+    abstract static class JavaInteropWorkerExecutionContextNode extends JSBuiltinNode {
+        JavaInteropWorkerExecutionContextNode(JSContext context, JSBuiltin builtin) {
+            super(context, builtin);
+        }
+
+        @Specialization
+        @TruffleBoundary
+        protected Object executionContext(DynamicObject worker) {
+            return new java.util.concurrent.Executor() {
+                public void execute(Runnable command) {
+                    JSContext context = getContext();
+                    EcmaAgent mainAgent = context.getMainWorker();
+                    EcmaAgent agent = JSJavaWorkerBuiltin.getAgent(worker);
+
+                    mainAgent.execute(agent, command);
+                }
+            };
+        }
     }
 
     @ImportStatic(value = {JSJavaWorkerBuiltin.class})
